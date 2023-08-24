@@ -1,0 +1,107 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+
+jobs:
+
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version: stable
+
+      - uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+
+      - name: Go mod
+        env:
+          DIFF_PATH: "go.mod go.sum"
+        run: |
+          go mod tidy
+          DIFF=$(git status --porcelain -- $DIFF_PATH)
+          if [ "$DIFF" ]; then
+            echo 'Please run `go mod tidy` before commits involving dependency change'
+            exit 1
+          fi
+
+
+  build:
+    name: Build
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: stable
+          cache: true
+
+      - run: go build -ldflags "-X main.buildTag=dev.$(git rev-parse --short HEAD)" -o bin/ ./cmd/acp
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: acp-${{ matrix.os }}
+          path: bin/
+
+
+  test:
+    name: Test
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: stable
+          cache: true
+
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Unit test
+        run: go test -timeout 30s ./...
+
+      - name: Integration test
+        shell: bash
+        env:
+          FILES: ./pkg
+        run: |
+          deno run --allow-net=:8000 edge/index.ts &
+          go run ./cmd/acp --setup-with '{"id":"AAAAAAAA","psk":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","server":"http://localhost:8000"}'
+          go run ./cmd/acp $FILES &
+          go run ./cmd/acp -d $FILES-copied
+          rm -r $FILES && mv $FILES-copied $FILES
+          DIFF=$(git status --porcelain -- $FILES)
+          if [ "$DIFF" ]; then
+            echo "Transferred content not matched:"
+            echo "$DIFF"
+            exit 1
+          fi
+
