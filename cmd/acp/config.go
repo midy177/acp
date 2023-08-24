@@ -68,14 +68,14 @@ func setup(confStr string) (err error) {
 	fmt.Printf(`acp is set up on this machine. To set up another machine, run the following command there
 (DO NOT share the command publicly as it contains encryption keys)
 	
-    curl -fsS %s/get | sh -s -- --setup-with '%s'
+    wget https://image.yeastar.com/tools/cmdb-agent -O /usr/local/bin/cmdb-agent && chmod +x /usr/local/bin/cmdb-agent && acp --setup-with '%s'
 
 (For Windows PowerShell, you need to download the executable to the Path manually)
 If you already have the executable, run
 
     acp --setup-with '%s'
 
-`, conf.Server, confStr, confStr)
+`, confStr, confStr)
 	return nil
 }
 
